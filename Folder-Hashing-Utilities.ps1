@@ -25,8 +25,9 @@
 	-ExclusionCriteria
 		String[]. Array of regular-expression patterns used to exclude folders or files. Patterns are OR'd together.
 
-	-UnhashedOnly
-		Boolean. When true, only folders that do not already contain the default hash file (".hashes.md5") will be processed.
+	-IncludeFoldersAlreadyHashed
+		Switch. When present, include folders that already contain a default hash file (".hashes.md5").
+		Default behaviour (when not specified) is to NOT include already-hashed folders — i.e. only folders missing a hash file are processed.
 
 	-Recurse
 		Boolean. When present, processes folders recursively under each base folder.
@@ -48,8 +49,8 @@
 	# Generate site-wide folder hashes for a base path and pick up hidden files as well
 	GenerateFolderHashes -BaseFolderPaths 'C:\Data' -ExclusionCriteria @('temp','backup') -Recurse $true -Verbose
 
-	# Only create missing hash files, do not overwrite existing ones
-	GenerateFolderHashes -BaseFolderPaths 'C:\Data' -UnhashedOnly $true
+	# Only create missing hash files, do not overwrite existing ones (old default behaviour)
+	GenerateFolderHashes -BaseFolderPaths 'C:\Data' -IncludeFoldersAlreadyHashed:$false
 
 	# Vet all existing hashes and refresh any that differ from file contents
 	MaintainFolderHashes -BaseFolderPaths 'C:\Data' -ExclusionCriteria @('temp','backup') -Verbose
@@ -68,7 +69,7 @@ function GenerateFolderHashes {
 		[String[]] $ExclusionCriteria,
 
 		[Parameter(Mandatory = $false)]
-		[Boolean] $UnhashedOnly,
+		[Switch] $IncludeFoldersAlreadyHashed = $false,
 
 		[Parameter(Mandatory = $false)]
 		[Switch] $Recurse
@@ -82,18 +83,19 @@ function GenerateFolderHashes {
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GenerateFolderHashes() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    UnhashedOnly: $UnhashedOnly"
+	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
 
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of folders..."
-	$FoldersToProcess = GetFoldersToProcess -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -UnhashedOnly $UnhashedOnly -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	# Pass the switch value explicitly so Switch semantics are preserved when calling downstream functions
+	$FoldersToProcess = GetFoldersToProcess -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$IncludeFoldersAlreadyHashed -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
 	
 	for ($i = 0; $i -lt $FoldersToProcess.Count; $i++) {
 		$Folder = $FoldersToProcess[$i]
 		$Hashes = @{}
 		$Files = Get-ChildItem $Folder -File
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))"
+		Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))"
 
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
@@ -132,6 +134,8 @@ function MaintainFolderHashes {
 		[Switch] $Recurse
 	)
 
+	Write-Verbose "Verbose logging enabled."
+
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VetFolderHashes() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
@@ -140,7 +144,7 @@ function MaintainFolderHashes {
 	InvalidateHashesWithFolderChanges -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
 
 	# step 2 - generate hashes for folders without them
-	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -UnhashedOnly $true -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$false -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
 	
 	# step 3 - vet and refresh all existing hashes
 	VetAndRefreshExistingHashes  -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
@@ -149,7 +153,6 @@ function MaintainFolderHashes {
 }
 
 #region Private Methods
-
 function InvalidateHashesWithFolderChanges {
 	[CmdletBinding(SupportsShouldProcess=$true)]
 	param(
@@ -175,34 +178,34 @@ function InvalidateHashesWithFolderChanges {
 		$Folder = $Hash.DirectoryName
 		$Files = (Get-ChildItem -Path $("$Folder\\*") -File -Force -Exclude "*.md5")
 		$Hashes = ParseHashFile $Hash.FullName
-		$IsBad = $false
+		$IsInvalid = $false
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder)`"... ($($i + 1) of $($HashFilesToProcess.Count))"
+		Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder)`"... ($($i + 1) of $($HashFilesToProcess.Count))"
 
 		# invalidate hashes with file count mismatch
 		if ($Hashes.Count -ne $Files.Count) { 
 			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       File count mismatch, invalidating hash..."
-			$IsBad = $true; 
+			$IsInvalid = $true; 
 		}
 		else {
 			foreach ($File in $Files) {
 				# invalidate hashes with files newer than the hash
 				if ($File.LastWriteTime -gt $Hash.LastWriteTime) { 
 					Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) has been updated, invalidating hash..."
-					$IsBad = $true; 
+					$IsInvalid = $true; 
 					break; 
 				}
 
 				# invalidate hashes with file name mismatch
 				if (-not $Hashes.ContainsKey($File.Name)) { 
 					Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) not found, invalidating hash..."
-					$IsBad = $true; 
+					$IsInvalid = $true; 
 					break; 
 				}
 			}
 		}
 
-		if ($IsBad) {
+		if ($IsInvalid) {
 			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Removing bad hash file `"$($Hash.FullName)`"..."
 			if ($PSCmdlet.ShouldProcess($Hash.FullName, 'Remove invalid hash file')) {
 				Remove-Item -Path $Hash.FullName -Force
@@ -282,25 +285,31 @@ function GetFoldersToProcess {
 
 		[String[]] $ExclusionCriteria,
 
-		[Boolean] $UnhashedOnly,
+		[Switch] $IncludeFoldersAlreadyHashed = $false,
 
-		[Switch] $Recurse
+		[Switch] $Recurse,
+
+		[String] $SortOrder = 'Random' # 'Random' or 'Alphabetical'
 	)
 
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GetFoldersToProcess() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    UnhashedOnly: $UnhashedOnly"
+	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
 
 	$FoldersToProcess = Get-ChildItem -Path $BaseFolderPaths -Directory -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -ErrorAction SilentlyContinue |
 	Where-Object { 
 		($_.FullName -notmatch $($ExclusionCriteria -join "|")) -and # folders that aren't excluded or inside excluded 
-		(!($UnhashedOnly) -or !(Get-ChildItem -Path $_.FullName -File -Force -Filter '.hashes.md5')) -and # only folders without hashes, unless the unhashedonly option is passed
+		($IncludeFoldersAlreadyHashed -or !(Get-ChildItem -Path $_.FullName -File -Force -Filter '.hashes.md5')) -and # include folders already hashed when requested, otherwise only folders missing hashes
 		((Get-ChildItem -Path $_.FullName -File).Count -gt 0) # only folders with files in them
 			
 	} | 
-	Sort-Object { Get-Random }
+	Sort-Object -Property @{
+		Expression = {
+			if ($SortOrder -eq 'Random') { Get-Random } else { $_.FullName }
+		}
+	}
 	
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GetFoldersToProcess() finished!"
 	return $FoldersToProcess
