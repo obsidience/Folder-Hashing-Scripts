@@ -75,12 +75,11 @@ function GenerateFolderHashes {
 		[Switch] $Recurse
 	)
 
-	# Preserve original default of -Recurse:$true in MaintainFolderHashes for compatibility
 	if (-not $PSBoundParameters.ContainsKey('Recurse')) { $Recurse = $true }
 
 	Write-Verbose "Verbose logging enabled."
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GenerateFolderHashes() started..."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GenerateFolderHashes() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
@@ -95,11 +94,11 @@ function GenerateFolderHashes {
 		$Hashes = @{}
 		$Files = Get-ChildItem $Folder -File
 
-		Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))"
+		Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))"
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
 
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))"
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))"
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5).Hash
 			$Hashes.Add($File.Name, $HashValue)
 		}
@@ -112,7 +111,7 @@ function GenerateFolderHashes {
 			}
 		}
 		else {
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Skipping..."
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Skipping..."
 		}
 	}
 
@@ -133,20 +132,23 @@ function MaintainFolderHashes {
 		[Switch] $Recurse
 	)
 
+	if (-not $PSBoundParameters.ContainsKey('Recurse')) { $Recurse = $true }
+
 	Write-Verbose "Verbose logging enabled."
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VetFolderHashes() started..."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VetFolderHashes() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
+	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
 
 	# step 1 - find invalid hashes for folders with changes
-	InvalidateHashesWithFolderChanges -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	InvalidateHashesWithFolderChanges -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf')
 
 	# step 2 - generate hashes for folders without them
-	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$false -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$false -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf')
 	
 	# step 3 - vet and refresh all existing hashes
-	VetAndRefreshExistingHashes  -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	VetAndRefreshExistingHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf')
 
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] MaintainFolderHashes() finished!"
 }
@@ -164,12 +166,12 @@ function InvalidateHashesWithFolderChanges {
 		[Switch] $Recurse
 	)
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] InvalidateHashesWithFolderChanges() started..."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] InvalidateHashesWithFolderChanges() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of hash files..."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of hash files..."
 	$HashFilesToProcess = GetHashFiles -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
 
 	for ($i = 0; $i -lt $HashFilesToProcess.Count; $i++) {
@@ -179,25 +181,25 @@ function InvalidateHashesWithFolderChanges {
 		$Hashes = ParseHashFile $Hash.FullName
 		$IsInvalid = $false
 
-		Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder)`"... ($($i + 1) of $($HashFilesToProcess.Count))"
+		Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder)`"... ($($i + 1) of $($HashFilesToProcess.Count))"
 
 		# invalidate hashes with file count mismatch
 		if ($Hashes.Count -ne $Files.Count) { 
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       File count mismatch, invalidating hash..."
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       File count mismatch, invalidating hash..."
 			$IsInvalid = $true; 
 		}
 		else {
 			foreach ($File in $Files) {
 				# invalidate hashes with files newer than the hash
 				if ($File.LastWriteTime -gt $Hash.LastWriteTime) { 
-					Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) has been updated, invalidating hash..."
+					Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) has been updated, invalidating hash..."
 					$IsInvalid = $true; 
 					break; 
 				}
 
 				# invalidate hashes with file name mismatch
 				if (-not $Hashes.ContainsKey($File.Name)) { 
-					Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) not found, invalidating hash..."
+					Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) not found, invalidating hash..."
 					$IsInvalid = $true; 
 					break; 
 				}
@@ -205,7 +207,7 @@ function InvalidateHashesWithFolderChanges {
 		}
 
 		if ($IsInvalid) {
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Removing bad hash file `"$($Hash.FullName)`"..."
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Removing bad hash file `"$($Hash.FullName)`"..."
 			if ($PSCmdlet.ShouldProcess($Hash.FullName, 'Remove invalid hash file')) {
 				Remove-Item -Path $Hash.FullName -Force
 			}
@@ -227,12 +229,12 @@ function VetAndRefreshExistingHashes {
 		[Switch] $Recurse
 	)
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VerifyFolderHashes() started..."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VerifyFolderHashes() started..."
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of all hash files that need vetting..."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of all hash files that need vetting..."
 	$HashFilesToProcess = GetHashFiles -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
 
 	for ($i = 0; $i -lt $HashFilesToProcess.Count; $i++) {
@@ -242,16 +244,16 @@ function VetAndRefreshExistingHashes {
 		$Hashes = ParseHashFile $HashFile.FullName
 		$RefreshNeeded = $false
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder.FullName)`" ($(Format-FileSize -Bytes $File.Length))... ($($i + 1) of $($HashFilesToProcess.Count))"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Folder was last hashed on $($HashFile.LastWriteTime)."
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder.FullName)`" ($(Format-FileSize -Bytes $File.Length))... ($($i + 1) of $($HashFilesToProcess.Count))"
+	Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Folder was last hashed on $($HashFile.LastWriteTime)."
 
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))"
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))"
 
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5)
 			if ($HashValue.Hash -ne $Hashes[$File.Name]) {
-				Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hash is bad, hash file for this folder will be refreshed..."
+				Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hash is bad, hash file for this folder will be refreshed..."
 				$RefreshNeeded = $true
 				$Hashes[$File.Name] = $HashValue.Hash
 			}
@@ -259,13 +261,13 @@ function VetAndRefreshExistingHashes {
 
 		if ($RefreshNeeded) {
 			$OutFilePath = "$($Folder.FullName)/.hashes.md5"
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Writing file `"$($OutFilePath)`"..."
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Writing file `"$($OutFilePath)`"..."
 			if ($PSCmdlet.ShouldProcess($OutFilePath, 'Refresh hash file')) {
 				WriteHashFile -Hashes $Hashes -FilePath $OutFilePath -Verbose:$PSBoundParameters.ContainsKey('Verbose')
 			}
 		}
 		else { 
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hashes are good, updating hash file modified date and moving on..." 
+			Write-Host "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hashes are good, updating hash file modified date and moving on..." 
 			$HashFile.LastWriteTime = (Get-Date)
 		}
 	}
