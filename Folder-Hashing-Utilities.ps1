@@ -96,11 +96,10 @@ function GenerateFolderHashes {
 		$Files = Get-ChildItem $Folder -File
 
 		Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))"
-
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
 
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))"
+			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))"
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5).Hash
 			$Hashes.Add($File.Name, $HashValue)
 		}
@@ -243,7 +242,7 @@ function VetAndRefreshExistingHashes {
 		$Hashes = ParseHashFile $HashFile.FullName
 		$RefreshNeeded = $false
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($HashFilesToProcess.Count))"
+	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder.FullName)`" ($(Format-FileSize -Bytes $File.Length))... ($($i + 1) of $($HashFilesToProcess.Count))"
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Folder was last hashed on $($HashFile.LastWriteTime)."
 
 		for ($j = 0; $j -lt $Files.Count; $j++) {
@@ -388,5 +387,24 @@ function WriteHashFile {
 	}
 
 	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] WriteHashFile() finished!"
+}
+
+function Format-FileSize {
+    param(
+        [Parameter(Mandatory=$true)][long] $Bytes,
+        [int] $Decimals = 1
+    )
+
+    if ($Bytes -lt 0) { return "-$(Format-FileSize -Bytes (-$Bytes) -Decimals $Decimals)" }
+
+    $units = 'B','KB','MB','GB','TB','PB'
+    $i = 0
+    while ($Bytes -ge 1024 -and $i -lt $units.Length - 1) {
+        $Bytes /= 1024
+        $i++
+    }
+
+    $fmt = "{0:N$Decimals} {1}"
+    return $fmt -f $Bytes, $units[$i]
 }
 #endregion
