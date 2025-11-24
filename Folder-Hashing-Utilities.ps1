@@ -99,8 +99,8 @@ function GenerateFolderHashes {
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
 
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))" -Prefix $VerbosePadding
-			Write-Out -Mode Progress -Depth ($Depth + 2) -Message 'Hashing...' -ProgressActivity 'Hashing'
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message "Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))" -Prefix $VerbosePadding
+			Write-Out -Mode Progress -Depth ($Depth + 1) -Message 'Hashing...' -ProgressActivity 'Hashing'
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5).Hash
 			$Hashes.Add($File.Name, $HashValue)
 		}
@@ -146,14 +146,18 @@ function MaintainFolderHashes {
 	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
 	# step 1 - find invalid hashes for folders with changes
+	Write-Host '------------------------------------------'
 	InvalidateHashesWithFolderChanges -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf') -Depth ($Depth + 1)
 
 	# step 2 - generate hashes for folders without them
+	Write-Host '------------------------------------------'
 	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$false -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf') -Depth ($Depth + 1)
-	
+
 	# step 3 - vet and refresh all existing hashes
+	Write-Host '------------------------------------------'
 	VetAndRefreshExistingHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf') -Depth ($Depth + 1)
 
+	Write-Host '------------------------------------------'
 	Write-Out -Mode Verbose -Depth $Depth -Message 'MaintainFolderHashes() finished!'
 }
 
@@ -173,7 +177,6 @@ function InvalidateHashesWithFolderChanges {
 	)
 
 	Write-Out -Mode Host -Depth $Depth -Message 'InvalidateHashesWithFolderChanges() started...' -Prefix $VerbosePadding
-	$Depth++
 	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
 	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
 	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
@@ -184,7 +187,7 @@ function InvalidateHashesWithFolderChanges {
 	for ($i = 0; $i -lt $HashFilesToProcess.Count; $i++) {
 		$Hash = $HashFilesToProcess[$i]
 		$Folder = $Hash.DirectoryName
-		$Files = (Get-ChildItem -Path $("$Folder\\*") -File -Force -Exclude "*.md5")
+		$Files = (Get-ChildItem -Path $("$Folder\\*") -File -Force -Exclude ".hashes.md5")
 		$Hashes = ParseHashFile -HashFile $Hash.FullName -Depth ($Depth + 1)
 		$IsInvalid = $false
 
@@ -192,21 +195,21 @@ function InvalidateHashesWithFolderChanges {
 
 		# invalidate hashes with file count mismatch
 		if ($Hashes.Count -ne $Files.Count) { 
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message 'File count mismatch, invalidating hash...' -Prefix $VerbosePadding
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message 'File count mismatch, invalidating hash...' -Prefix $VerbosePadding
 			$IsInvalid = $true; 
 		}
 		else {
 			foreach ($File in $Files) {
 				# invalidate hashes with files newer than the hash
 				if ($File.LastWriteTime -gt $Hash.LastWriteTime) { 
-					Write-Out -Mode Host -Depth ($Depth + 2) -Message "$($File) has been updated, invalidating hash..." -Prefix $VerbosePadding
+					Write-Out -Mode Host -Depth ($Depth + 1) -Message "$($File) has been updated, invalidating hash..." -Prefix $VerbosePadding
 					$IsInvalid = $true; 
 					break; 
 				}
 
 				# invalidate hashes with file name mismatch
 				if (-not $Hashes.ContainsKey($File.Name)) { 
-					Write-Out -Mode Host -Depth ($Depth + 2) -Message "$($File) not found, invalidating hash..." -Prefix $VerbosePadding
+					Write-Out -Mode Host -Depth ($Depth + 1) -Message "$($File) not found, invalidating hash..." -Prefix $VerbosePadding
 					$IsInvalid = $true; 
 					break; 
 				}
@@ -214,17 +217,16 @@ function InvalidateHashesWithFolderChanges {
 		}
 
 		if ($IsInvalid) {
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Removing bad hash file `"$($Hash.FullName)`"..." -Prefix $VerbosePadding
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message "Removing bad hash file `"$($Hash.FullName)`"..." -Prefix $VerbosePadding
 			if ($PSCmdlet.ShouldProcess($Hash.FullName, 'Remove invalid hash file')) {
 				Remove-Item -Path $Hash.FullName -Force
 			}
 		}
 		else {
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message 'Hashes are valid, moving on...' -Prefix $VerbosePadding
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message 'No high-level folder changes detected, moving on...' -Prefix $VerbosePadding
 		}
 	}
 
-	$Depth--
 	Write-Out -Mode Verbose -Depth $Depth -Message 'InvalidateHashesWithFolderChanges() finished!'
 }
 
@@ -243,7 +245,6 @@ function VetAndRefreshExistingHashes {
 	)
 
 	Write-Out -Mode Host -Depth $Depth -Message 'VerifyFolderHashes() started...' -Prefix $VerbosePadding
-	$Depth++
 	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
 	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
 	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
@@ -263,11 +264,11 @@ function VetAndRefreshExistingHashes {
 
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))" -Prefix $VerbosePadding
-			Write-Out -Mode Progress -Depth ($Depth + 2) -Message 'Hashing...' -ProgressActivity 'Hashing'
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message "Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))" -Prefix $VerbosePadding
+			Write-Out -Mode Progress -Depth ($Depth + 1) -Message 'Hashing...' -ProgressActivity 'Hashing'
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5)
 			if ($HashValue.Hash -ne $Hashes[$File.Name]) {
-				Write-Out -Mode Host -Depth ($Depth + 2) -Message 'Hash is bad, hash file for this folder will be refreshed...' -Prefix $VerbosePadding
+				Write-Out -Mode Host -Depth ($Depth + 1) -Message 'Hash is bad, hash file for this folder will be refreshed...' -Prefix $VerbosePadding
 				$RefreshNeeded = $true
 				$Hashes[$File.Name] = $HashValue.Hash
 			}
@@ -275,18 +276,19 @@ function VetAndRefreshExistingHashes {
 
 		if ($RefreshNeeded) {
 			$OutFilePath = "$($Folder.FullName)/.hashes.md5"
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Writing file `"$($OutFilePath)`"..." -Prefix $VerbosePadding
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message "Writing file `"$($OutFilePath)`"..." -Prefix $VerbosePadding
 			if ($PSCmdlet.ShouldProcess($OutFilePath, 'Refresh hash file')) {
 				WriteHashFile -Hashes $Hashes -FilePath $OutFilePath -Verbose:$PSBoundParameters.ContainsKey('Verbose') -Depth ($Depth + 1)
 			}
 		}
 		else { 
-			Write-Out -Mode Host -Depth ($Depth + 2) -Message 'Hashes are valid, updating hash file modified date and moving on...' -Prefix $VerbosePadding
-			$HashFile.LastWriteTime = (Get-Date)
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message 'Hashes are valid, updating hash file modified date and moving on...' -Prefix $VerbosePadding
+			if ($PSCmdlet.ShouldProcess($HashFile.FullName, 'Update hash file timestamp')) {
+				$HashFile.LastWriteTime = (Get-Date)
+			}
 		}
 	}
 
-	$Depth--
 	Write-Out -Mode Verbose -Depth $Depth -Message 'VerifyFolderHashes() finished!'
 }
 #endregion
@@ -311,7 +313,6 @@ function GetFoldersToProcess {
 	)
 
 	Write-Out -Mode Host -Depth ($Depth-1) -Message 'GetFoldersToProcess() started...' -Prefix $VerbosePadding
-	$Depth++
 	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
 	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
 	Write-Out -Mode Verbose -Depth $Depth -Message "IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
@@ -332,7 +333,6 @@ function GetFoldersToProcess {
 		}
 	}
 	
-	$Depth--
 	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'GetFoldersToProcess() finished!'
 	return $FoldersToProcess
 }
@@ -352,7 +352,6 @@ function GetHashFiles {
 	)
 
 	Write-Out -Mode Host -Depth	($Depth-1) -Message 'GetHashFiles() started...' -Prefix $VerbosePadding
-	$Depth++
 	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
 	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
 	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
@@ -365,7 +364,6 @@ function GetHashFiles {
 	} | 
 	Sort-Object LastWriteTime
 
-	$Depth--
 	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'GetHashFiles() finished!'
 	return $HashFiles
 }
@@ -380,8 +378,7 @@ function ParseHashFile {
 		[int] $Depth = 0
 	)
 
-	Write-Out -Mode Host -Depth ($Depth-1) -Message 'ParseHashFile() started...' -Prefix $VerbosePadding
-	$Depth++
+	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'ParseHashFile() started...' -Prefix $VerbosePadding
 	Write-Out -Mode Verbose -Depth $Depth -Message "HashFile: $HashFile"
 
 	$Hashes = @{}
@@ -390,7 +387,6 @@ function ParseHashFile {
 		$Hashes[$key] = $value
 	}
 
-	$Depth--
 	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'ParseHashFile() finished!'
 	return $Hashes
 }
@@ -408,8 +404,7 @@ function WriteHashFile {
 		[int] $Depth = 0
 	)
 
-	Write-Out -Mode Host -Depth ($Depth-1) -Message 'WriteHashFile() started...' -Prefix $VerbosePadding
-	$Depth++
+	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'WriteHashFile() started...' -Prefix $VerbosePadding
 	Write-Out -Mode Verbose -Depth $Depth -Message "Hashes: $Hashes"
 	Write-Out -Mode Verbose -Depth $Depth -Message "FilePath: $FilePath"
 
@@ -422,7 +417,6 @@ function WriteHashFile {
 		Out-File -FilePath $FilePath
 	}
 	
-	$Depth--
 	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'WriteHashFile() finished!'
 }
 
