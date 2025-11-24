@@ -57,10 +57,9 @@
 #>
 
 #$ErrorActionPreference = 'Stop'
-$VerbosePadding = '        '
 
 function GenerateFolderHashes {
-	[CmdletBinding(SupportsShouldProcess=$true)]
+	[CmdletBinding(SupportsShouldProcess = $true)]
 	param(
 		[Parameter(Mandatory = $true)]
 		[ValidateNotNullOrEmpty()]
@@ -73,54 +72,56 @@ function GenerateFolderHashes {
 		[Switch] $IncludeFoldersAlreadyHashed = $false,
 
 		[Parameter(Mandatory = $false)]
-		[Switch] $Recurse
+		[Switch] $Recurse,
+
+		[int] $Depth = 0
 	)
 
 	if (-not $PSBoundParameters.ContainsKey('Recurse')) { $Recurse = $true }
 
-	Write-Verbose "Verbose logging enabled."
-
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GenerateFolderHashes() started..."
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
+	Write-Out -Mode Verbose -Depth $Depth -Message 'Verbose logging enabled.'
+	$MethodCallDepth = if ($Depth -gt 0) { $Depth - 1 } else { $Depth }
+	Write-Out -Mode Host -Depth $MethodCallDepth -Message 'GenerateFolderHashes() started...' -Prefix $VerbosePadding
+	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
+	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
+	Write-Out -Mode Verbose -Depth $Depth -Message "IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
+	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
 	# Pass the switch value explicitly so Switch semantics are preserved when calling downstream functions
-	$FoldersToProcess = GetFoldersToProcess -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$IncludeFoldersAlreadyHashed -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	$FoldersToProcess = GetFoldersToProcess -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$IncludeFoldersAlreadyHashed -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -Depth ($Depth + 1)
 	
 	for ($i = 0; $i -lt $FoldersToProcess.Count; $i++) {
 		$Folder = $FoldersToProcess[$i]
 		$Hashes = @{}
 		$Files = Get-ChildItem $Folder -File
 
-		Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))"
+		Write-Out -Mode Host -Depth ($Depth + 1) -Message "Processing folder `"$($Folder.FullName)`"... ($($i + 1) of $($FoldersToProcess.Count))" -Prefix $VerbosePadding
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
 
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))"
-			Write-Progress "Hashing..."
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Hashing file `"$($File.Name)`" ($(Format-FileSize -Bytes $File.Length))... ($($j + 1) of $($Files.Count))" -Prefix $VerbosePadding
+			Write-Out -Mode Progress -Depth ($Depth + 2) -Message 'Hashing...' -ProgressActivity 'Hashing'
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5).Hash
 			$Hashes.Add($File.Name, $HashValue)
 		}
 
 		if ($Hashes.Count -gt 0) {
 			$OutFilePath = "$($Folder.FullName)/.hashes.md5"
-			Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Writing file `"$($OutFilePath)`"..."
+			Write-Out -Mode Verbose -Depth ($Depth + 1) -Message "Writing file `"$($OutFilePath)`"..."
 			if ($PSCmdlet.ShouldProcess($OutFilePath, 'Write folder hash manifest')) {
-				WriteHashFile -Hashes $Hashes -FilePath $OutFilePath -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+				WriteHashFile -Hashes $Hashes -FilePath $OutFilePath -Verbose:$PSBoundParameters.ContainsKey('Verbose') -Depth ($Depth + 1)
 			}
 		}
 		else {
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Skipping..."
+			Write-Out -Mode Host -Depth ($Depth + 1) -Message 'Skipping...' -Prefix $VerbosePadding
 		}
 	}
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GenerateFolderHashes() finished!"
+	Write-Out -Mode Verbose -Depth $MethodCallDepth -Message 'GenerateFolderHashes() finished!'
 }
 
 function MaintainFolderHashes {
-	[CmdletBinding(SupportsShouldProcess=$true)]
+	[CmdletBinding(SupportsShouldProcess = $true)]
 	param(
 		[Parameter(Mandatory = $true)]
 		[ValidateNotNullOrEmpty()]
@@ -130,33 +131,35 @@ function MaintainFolderHashes {
 		[String[]] $ExclusionCriteria,
 
 		[Parameter(Mandatory = $false)]
-		[Switch] $Recurse
+		[Switch] $Recurse,
+
+		[int] $Depth = 0
 	)
 
 	if (-not $PSBoundParameters.ContainsKey('Recurse')) { $Recurse = $true }
 
-	Write-Verbose "Verbose logging enabled."
+	Write-Out -Mode Verbose -Depth $Depth -Message 'Verbose logging enabled.'
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VetFolderHashes() started..."
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
+	Write-Out -Mode Host -Depth $Depth -Message 'VetFolderHashes() started...' -Prefix $VerbosePadding
+	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
+	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
+	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
 	# step 1 - find invalid hashes for folders with changes
-	InvalidateHashesWithFolderChanges -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf')
+	InvalidateHashesWithFolderChanges -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf') -Depth ($Depth + 1)
 
 	# step 2 - generate hashes for folders without them
-	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$false -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf')
+	GenerateFolderHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -IncludeFoldersAlreadyHashed:$false -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf') -Depth ($Depth + 1)
 	
 	# step 3 - vet and refresh all existing hashes
-	VetAndRefreshExistingHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf')
+	VetAndRefreshExistingHashes -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -WhatIf:$PSBoundParameters.ContainsKey('WhatIf') -Depth ($Depth + 1)
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] MaintainFolderHashes() finished!"
+	Write-Out -Mode Verbose -Depth $Depth -Message 'MaintainFolderHashes() finished!'
 }
 
 #region Private Methods
 function InvalidateHashesWithFolderChanges {
-	[CmdletBinding(SupportsShouldProcess=$true)]
+	[CmdletBinding(SupportsShouldProcess = $true)]
 	param(
 		[Parameter(Mandatory = $true)]
 		[ValidateNotNullOrEmpty()]
@@ -164,43 +167,46 @@ function InvalidateHashesWithFolderChanges {
 
 		[String[]] $ExclusionCriteria,
 
-		[Switch] $Recurse
+		[Switch] $Recurse,
+
+		[int] $Depth = 0
 	)
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] InvalidateHashesWithFolderChanges() started..."
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
+	Write-Out -Mode Host -Depth $Depth -Message 'InvalidateHashesWithFolderChanges() started...' -Prefix $VerbosePadding
+	$Depth++
+	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
+	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
+	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of hash files..."
-	$HashFilesToProcess = GetHashFiles -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	Write-Out -Mode Host -Depth $Depth -Message 'Gathering list of hash files...' -Prefix $VerbosePadding
+	$HashFilesToProcess = GetHashFiles -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -Depth ($Depth + 1)
 
 	for ($i = 0; $i -lt $HashFilesToProcess.Count; $i++) {
 		$Hash = $HashFilesToProcess[$i]
 		$Folder = $Hash.DirectoryName
 		$Files = (Get-ChildItem -Path $("$Folder\\*") -File -Force -Exclude "*.md5")
-		$Hashes = ParseHashFile $Hash.FullName
+		$Hashes = ParseHashFile -HashFile $Hash.FullName -Depth ($Depth + 1)
 		$IsInvalid = $false
 
-		Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder)`"... ($($i + 1) of $($HashFilesToProcess.Count))"
+		Write-Out -Mode Host -Depth ($Depth + 1) -Message "Processing folder `"$($Folder)`"... ($($i + 1) of $($HashFilesToProcess.Count))" -Prefix $VerbosePadding
 
 		# invalidate hashes with file count mismatch
 		if ($Hashes.Count -ne $Files.Count) { 
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       File count mismatch, invalidating hash..."
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message 'File count mismatch, invalidating hash...' -Prefix $VerbosePadding
 			$IsInvalid = $true; 
 		}
 		else {
 			foreach ($File in $Files) {
 				# invalidate hashes with files newer than the hash
 				if ($File.LastWriteTime -gt $Hash.LastWriteTime) { 
-					Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) has been updated, invalidating hash..."
+					Write-Out -Mode Host -Depth ($Depth + 2) -Message "$($File) has been updated, invalidating hash..." -Prefix $VerbosePadding
 					$IsInvalid = $true; 
 					break; 
 				}
 
 				# invalidate hashes with file name mismatch
 				if (-not $Hashes.ContainsKey($File.Name)) { 
-					Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       $($File) not found, invalidating hash..."
+					Write-Out -Mode Host -Depth ($Depth + 2) -Message "$($File) not found, invalidating hash..." -Prefix $VerbosePadding
 					$IsInvalid = $true; 
 					break; 
 				}
@@ -208,21 +214,22 @@ function InvalidateHashesWithFolderChanges {
 		}
 
 		if ($IsInvalid) {
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Removing bad hash file `"$($Hash.FullName)`"..."
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Removing bad hash file `"$($Hash.FullName)`"..." -Prefix $VerbosePadding
 			if ($PSCmdlet.ShouldProcess($Hash.FullName, 'Remove invalid hash file')) {
 				Remove-Item -Path $Hash.FullName -Force
 			}
 		}
 		else {
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hash is valid, moving on..."
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message 'Hashes are valid, moving on...' -Prefix $VerbosePadding
 		}
 	}
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] InvalidateHashesWithFolderChanges() finished!"
+	$Depth--
+	Write-Out -Mode Verbose -Depth $Depth -Message 'InvalidateHashesWithFolderChanges() finished!'
 }
 
 function VetAndRefreshExistingHashes {
-	[CmdletBinding(SupportsShouldProcess=$true)]
+	[CmdletBinding(SupportsShouldProcess = $true)]
 	param(
 		[Parameter(Mandatory = $true)]
 		[ValidateNotNullOrEmpty()]
@@ -230,34 +237,37 @@ function VetAndRefreshExistingHashes {
 
 		[String[]] $ExclusionCriteria,
 
-		[Switch] $Recurse
+		[Switch] $Recurse,
+
+		[int] $Depth = 0
 	)
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VerifyFolderHashes() started..."
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
+	Write-Out -Mode Host -Depth $Depth -Message 'VerifyFolderHashes() started...' -Prefix $VerbosePadding
+	$Depth++
+	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
+	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
+	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of all hash files that need vetting..."
-	$HashFilesToProcess = GetHashFiles -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+	Write-Out -Mode Host -Depth $Depth -Message 'Gathering list of all hash files that need vetting...' -Prefix $VerbosePadding
+	$HashFilesToProcess = GetHashFiles -BaseFolderPaths @BaseFolderPaths -ExclusionCriteria $ExclusionCriteria -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -Depth ($Depth + 1)
 
 	for ($i = 0; $i -lt $HashFilesToProcess.Count; $i++) {
 		$HashFile = $HashFilesToProcess[$i]
 		$Folder = $HashFile.Directory
 		$Files = (Get-ChildItem -Path $("$($HashFile.DirectoryName)\\*") -File -Force -Exclude "*.md5")
-		$Hashes = ParseHashFile $HashFile.FullName
+		$Hashes = ParseHashFile -HashFile $HashFile.FullName -Depth ($Depth + 1)
 		$RefreshNeeded = $false
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Processing folder `"$($Folder.FullName)`" ($(Format-FileSize -Bytes $File.Length))... ($($i + 1) of $($HashFilesToProcess.Count))"
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Folder was last hashed on $($HashFile.LastWriteTime)."
+		Write-Out -Mode Host -Depth ($Depth + 1) -Message "Processing folder `"$($Folder.FullName)`" ($(Format-FileSize -Bytes $File.Length))... ($($i + 1) of $($HashFilesToProcess.Count))" -Prefix $VerbosePadding
+		Write-Out -Mode Host -Depth ($Depth + 1) -Message "Folder was last hashed on $($HashFile.LastWriteTime)." -Prefix $VerbosePadding
 
 		for ($j = 0; $j -lt $Files.Count; $j++) {
 			$File = $Files[$j]
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))"
-			Write-Progress "Hashing..."
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Hashing file `"$($File.Name)`"... ($($j + 1) of $($Files.Count))" -Prefix $VerbosePadding
+			Write-Out -Mode Progress -Depth ($Depth + 2) -Message 'Hashing...' -ProgressActivity 'Hashing'
 			$HashValue = (Get-FileHash -LiteralPath $File -Algorithm MD5)
 			if ($HashValue.Hash -ne $Hashes[$File.Name]) {
-				Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hash is bad, hash file for this folder will be refreshed..."
+				Write-Out -Mode Host -Depth ($Depth + 2) -Message 'Hash is bad, hash file for this folder will be refreshed...' -Prefix $VerbosePadding
 				$RefreshNeeded = $true
 				$Hashes[$File.Name] = $HashValue.Hash
 			}
@@ -265,18 +275,19 @@ function VetAndRefreshExistingHashes {
 
 		if ($RefreshNeeded) {
 			$OutFilePath = "$($Folder.FullName)/.hashes.md5"
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Writing file `"$($OutFilePath)`"..."
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message "Writing file `"$($OutFilePath)`"..." -Prefix $VerbosePadding
 			if ($PSCmdlet.ShouldProcess($OutFilePath, 'Refresh hash file')) {
-				WriteHashFile -Hashes $Hashes -FilePath $OutFilePath -Verbose:$PSBoundParameters.ContainsKey('Verbose')
+				WriteHashFile -Hashes $Hashes -FilePath $OutFilePath -Verbose:$PSBoundParameters.ContainsKey('Verbose') -Depth ($Depth + 1)
 			}
 		}
 		else { 
-			Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]       Hashes are good, updating hash file modified date and moving on..." 
+			Write-Out -Mode Host -Depth ($Depth + 2) -Message 'Hashes are valid, updating hash file modified date and moving on...' -Prefix $VerbosePadding
 			$HashFile.LastWriteTime = (Get-Date)
 		}
 	}
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] VerifyFolderHashes() finished!"
+	$Depth--
+	Write-Out -Mode Verbose -Depth $Depth -Message 'VerifyFolderHashes() finished!'
 }
 #endregion
 
@@ -294,17 +305,20 @@ function GetFoldersToProcess {
 
 		[Switch] $Recurse,
 
+		[int] $Depth = 0,
+
 		[String] $SortOrder = 'Random' # 'Random' or 'Alphabetical'
 	)
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GetFoldersToProcess() started..."
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
+	Write-Out -Mode Host -Depth ($Depth-1) -Message 'GetFoldersToProcess() started...' -Prefix $VerbosePadding
+	$Depth++
+	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
+	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
+	Write-Out -Mode Verbose -Depth $Depth -Message "IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
+	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of folders..."
-	Write-Progress "Scanning..."
+	Write-Out -Mode Host -Depth $Depth -Message 'Gathering list of folders...' -Prefix $VerbosePadding
+	Write-Out -Mode Progress -Depth $Depth -Message 'Scanning...' -ProgressActivity 'Scanning'
 	$FoldersToProcess = Get-ChildItem -Path $BaseFolderPaths -Directory -Recurse:$Recurse -Verbose:$PSBoundParameters.ContainsKey('Verbose') -ErrorAction SilentlyContinue |
 	Where-Object { 
 		($_.FullName -notmatch $($ExclusionCriteria -join "|")) -and # folders that aren't excluded or inside excluded 
@@ -318,7 +332,8 @@ function GetFoldersToProcess {
 		}
 	}
 	
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GetFoldersToProcess() finished!"
+	$Depth--
+	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'GetFoldersToProcess() finished!'
 	return $FoldersToProcess
 }
 
@@ -331,23 +346,27 @@ function GetHashFiles {
 
 		[String[]] $ExclusionCriteria,
 
-		[Switch] $Recurse
+		[Switch] $Recurse,
+
+		[int] $Depth = 0
 	)
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GetHashFiles()"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    BaseFolderPaths: $BaseFolderPaths"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    ExclusionCriteria: $ExclusionCriteria"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Recurse: $Recurse"
+	Write-Out -Mode Host -Depth	($Depth-1) -Message 'GetHashFiles() started...' -Prefix $VerbosePadding
+	$Depth++
+	Write-Out -Mode Verbose -Depth $Depth -Message "BaseFolderPaths: $BaseFolderPaths"
+	Write-Out -Mode Verbose -Depth $Depth -Message "ExclusionCriteria: $ExclusionCriteria"
+	Write-Out -Mode Verbose -Depth $Depth -Message "Recurse: $Recurse"
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Gathering list of hash files..."
-	Write-Progress "Scanning..."
+	Write-Out -Mode Host -Depth $Depth -Message 'Gathering list of hash files...' -Prefix $VerbosePadding
+	Write-Out -Mode Progress -Depth $Depth -Message 'Scanning...' -ProgressActivity 'Scanning'
 	$HashFiles = Get-ChildItem -Path $BaseFolderPaths -File -Force -Recurse:$Recurse -Filter ".hashes.md5" -Verbose:$PSBoundParameters.ContainsKey('Verbose') -ErrorAction SilentlyContinue |
 	Where-Object { 
 		($_.FullName -notmatch $($ExclusionCriteria -join "|"))
 	} | 
 	Sort-Object LastWriteTime
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] GetHashFiles() finished!"
+	$Depth--
+	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'GetHashFiles() finished!'
 	return $HashFiles
 }
 
@@ -356,11 +375,14 @@ function ParseHashFile {
 	param(
 		[Parameter(Mandatory = $true)]
 		[ValidateNotNullOrEmpty()]
-		[String] $HashFile
+		[String] $HashFile,
+
+		[int] $Depth = 0
 	)
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] ParseHashFile() started..."
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    HashFile: $HashFile"
+	Write-Out -Mode Host -Depth ($Depth-1) -Message 'ParseHashFile() started...' -Prefix $VerbosePadding
+	$Depth++
+	Write-Out -Mode Verbose -Depth $Depth -Message "HashFile: $HashFile"
 
 	$Hashes = @{}
 	$(Get-Content $HashFile) | ForEach-Object {
@@ -368,53 +390,78 @@ function ParseHashFile {
 		$Hashes[$key] = $value
 	}
 
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] ParseHashFile() finished!"
+	$Depth--
+	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'ParseHashFile() finished!'
 	return $Hashes
 }
 
 function WriteHashFile {
-	[CmdletBinding(SupportsShouldProcess=$true)]
+	[CmdletBinding(SupportsShouldProcess = $true)]
 	param(
 		[Parameter(Mandatory = $true)]
 		[Hashtable] $Hashes,
 
 		[Parameter(Mandatory = $true)]
 		[ValidateNotNullOrEmpty()]
-		[String] $FilePath
+		[String] $FilePath,
+
+		[int] $Depth = 0
 	)
 
-	Write-Host $VerbosePadding "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] WriteHashFile()"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    Hashes: $Hashes"
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")]    FilePath: $FilePath"
+	Write-Out -Mode Host -Depth ($Depth-1) -Message 'WriteHashFile() started...' -Prefix $VerbosePadding
+	$Depth++
+	Write-Out -Mode Verbose -Depth $Depth -Message "Hashes: $Hashes"
+	Write-Out -Mode Verbose -Depth $Depth -Message "FilePath: $FilePath"
 
 	if ($PSCmdlet.ShouldProcess($FilePath, 'Write hash file')) {
 		$Hashes.GetEnumerator() | 
-			Sort-Object { $_.Key } | 
-			ForEach-Object {
-				$_.Value.ToUpper() + " *" + $_.Key
-			} | 
-			Out-File -FilePath $FilePath
+		Sort-Object { $_.Key } | 
+		ForEach-Object {
+			$_.Value.ToUpper() + " *" + $_.Key
+		} | 
+		Out-File -FilePath $FilePath
 	}
-
-	Write-Verbose "[$(Get-Date -format "yyyy-MM-dd HH:mm:ss")] WriteHashFile() finished!"
+	
+	$Depth--
+	Write-Out -Mode Verbose -Depth ($Depth-1) -Message 'WriteHashFile() finished!'
 }
 
 function Format-FileSize {
-    param(
-        [Parameter(Mandatory=$true)][long] $Bytes,
-        [int] $Decimals = 1
-    )
+	param(
+		[Parameter(Mandatory = $true)][long] $Bytes,
+		[int] $Decimals = 1
+	)
 
-    if ($Bytes -lt 0) { return "-$(Format-FileSize -Bytes (-$Bytes) -Decimals $Decimals)" }
+	if ($Bytes -lt 0) { return "-$(Format-FileSize -Bytes (-$Bytes) -Decimals $Decimals)" }
 
-    $units = 'B','KB','MB','GB','TB','PB'
-    $i = 0
-    while ($Bytes -ge 1024 -and $i -lt $units.Length - 1) {
-        $Bytes /= 1024
-        $i++
-    }
+	$units = 'B', 'KB', 'MB', 'GB', 'TB', 'PB'
+	$i = 0
+	while ($Bytes -ge 1024 -and $i -lt $units.Length - 1) {
+		$Bytes /= 1024
+		$i++
+	}
 
-    $fmt = "{0:N$Decimals} {1}"
-    return $fmt -f $Bytes, $units[$i]
+	$fmt = "{0:N$Decimals} {1}"
+	return $fmt -f $Bytes, $units[$i]
+}
+
+function Write-Out {
+	param(
+		[Parameter(Mandatory = $true)][object]$Message,
+		[ValidateSet('Host', 'Verbose', 'Progress')][string]$Mode = 'Host',
+		[int]$Depth = 0,
+		[string]$Prefix,
+		[string]$ProgressActivity = ''
+	)
+
+	$msg = if ($Message -is [string]) { $Message } else { ($Message | Out-String).Trim() }
+	$indent = ' ' * (3 * [math]::Max(0, $Depth))
+	$out = "[$(Get-Date -format 'yyyy-MM-dd HH:mm:ss')] ${indent}${msg}"
+
+	switch ($Mode) {
+		'Host' { Write-Host ('         ' + $Prefix + $out) }
+		'Verbose' { Write-Verbose ($Prefix + $out) }
+		'Progress' { $act = if ($ProgressActivity) { $ProgressActivity } else { $msg }; Write-Progress -Activity $act -Status $out }
+	}
 }
 #endregion
