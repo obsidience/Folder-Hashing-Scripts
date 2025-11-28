@@ -60,7 +60,7 @@ The simplest way to use this project is through the entry point scripts:
 
 These scripts automatically:
 - Load configuration from `.env` (or `.env.test` if `.env` doesn't exist)
-- Enable `-WhatIf` and `-Verbose` modes when running in test mode
+- Pass `VERBOSE` and `WHATIF` settings from the environment file to the functions
 
 ### Direct Function Calls
 
@@ -98,22 +98,26 @@ BASE_FOLDER_PATHS=/mnt/storage/Photos, /mnt/storage/Documents
 
 # Comma-separated list of regex patterns to exclude
 EXCLUSION_CRITERIA=\.git, \.vscode, temp, \.plex
+
+# Enable verbose output (true/false)
+VERBOSE=false
+
+# Enable dry-run mode (true/false)
+WHATIF=false
 ```
 
 | Variable | Format | Description |
 |----------|--------|-------------|
 | `BASE_FOLDER_PATHS` | CSV of paths | Folders to process (comma-separated) |
 | `EXCLUSION_CRITERIA` | CSV of regex patterns | Patterns to exclude folders/files (comma-separated, OR'd together) |
+| `VERBOSE` | `true` / `false` | Enable detailed logging output (defaults to `false`) |
+| `WHATIF` | `true` / `false` | Dry-run mode — no files are written (defaults to `false`) |
 
 ## Testing
 
-### Test Mode
+### Test Configuration
 
-When no `.env` file is present, the entry scripts automatically fall back to `.env.test` and enable:
-- `-WhatIf` mode (no files are actually written)
-- `-Verbose` mode (detailed logging output)
-
-This makes it safe to run the scripts without a production configuration.
+When no `.env` file is present, the entry scripts automatically fall back to `.env.test`. To run in test mode, configure `VERBOSE=true` and `WHATIF=true` in your `.env.test` file.
 
 ### Test Configuration (`.env.test`)
 
@@ -122,6 +126,10 @@ This makes it safe to run the scripts without a production configuration.
 BASE_FOLDER_PATHS=./tests/fixtures
 # CSV-of-regular-expressions to exclude
 EXCLUSION_CRITERIA=exclude, exclude.txt$
+# Enable verbose output (true/false, defaults to false if not set)
+VERBOSE=false
+# Enable dry-run mode (true/false, defaults to false if not set)
+WHATIF=false
 ```
 
 ### Test Fixtures
@@ -147,11 +155,11 @@ tests/fixtures/
     └── file3.txt
 ```
 
-Run tests by simply executing the entry scripts without a `.env` file:
+Run tests by executing the entry scripts without a `.env` file (ensure `WHATIF=true` in `.env.test`):
 
 ```powershell
-./Generate-FolderHashes.ps1   # Runs in WhatIf mode against test fixtures
-./Maintain-FolderHashes.ps1   # Runs in WhatIf mode against test fixtures
+./Generate-FolderHashes.ps1   # Runs against test fixtures
+./Maintain-FolderHashes.ps1   # Runs against test fixtures
 ```
 
 ## Function Reference

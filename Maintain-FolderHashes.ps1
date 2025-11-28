@@ -1,10 +1,8 @@
 . "$PSScriptRoot\Folder-Hashing-Utilities.ps1" | Out-Null
 
-#region Load .env if present, otherwise fall back to .env.test and set WhatIf and Verbose
-$IsTesting = $false
+#region Load .env if present, otherwise fall back to .env.test
 $envFile = Join-Path $PSScriptRoot '.env'
 if (-not (Test-Path $envFile)) {
-    $IsTesting = $true
     $envFile = Join-Path $PSScriptRoot '.env.test'
 }
 
@@ -19,6 +17,8 @@ Get-Content $envFile -Raw |
 
 $BasePaths = $env:BASE_FOLDER_PATHS -split ',' | ForEach-Object { $_.Trim() }           # Build base path(s) array (CSV) or default to current working directory
 $ExclusionCriteria = $env:EXCLUSION_CRITERIA -split ',' | ForEach-Object { $_.Trim() }  # Build exclusions array (CSV) or default to .git and .vscode patterns
+$EnvVerbose = $env:VERBOSE -ieq 'true'                                                  # Parse VERBOSE from .env (defaults to $false)
+$EnvWhatIf = $env:WHATIF -ieq 'true'                                                    # Parse WHATIF from .env (defaults to $false)
 
 foreach ($bp in $BasePaths) { 
     if ($bp) { 
@@ -26,10 +26,8 @@ foreach ($bp in $BasePaths) {
             BaseFolderPaths   = $bp
             ExclusionCriteria = $ExclusionCriteria
         }
-        if ($IsTesting) {
-            $params['WhatIf'] = $true
-            $params['Verbose'] = $true
-        }
+        if ($EnvWhatIf) { $params['WhatIf'] = $true }
+        if ($EnvVerbose) { $params['Verbose'] = $true }
         MaintainFolderHashes @params
     } 
 }
