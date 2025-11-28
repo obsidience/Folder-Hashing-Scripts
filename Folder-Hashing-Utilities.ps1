@@ -8,7 +8,7 @@ function GenerateFolderHashes {
 	param(
 		[String[]] $BaseFolderPaths,
 
-		[DirectoryInfo[]] $FoldersToProcess,
+		[System.IO.DirectoryInfo[]] $FoldersToProcess,
 
 		[Parameter(Mandatory = $false)]
 		[String[]] $ExclusionCriteria,
@@ -25,13 +25,13 @@ function GenerateFolderHashes {
 	)
 
 	if ((-not $BaseFolderPaths -or $BaseFolderPaths.Count -eq 0) -and (-not $FoldersToProcess -or $FoldersToProcess.Count -eq 0)) { throw "Either -BaseFolderPaths or -FoldersToProcess must be provided." }
-
 	if (-not $PSBoundParameters.ContainsKey('Recurse')) { $Recurse = $true }
+	if ($null -eq $ExclusionCriteria -or $ExclusionCriteria.Count -eq 0) { $ExclusionCriteria += @('.*') }
 
 	if ($PSBoundParameters.ContainsKey('Verbose')) { $VerbosePreference = 'Continue' } else { $VerbosePreference = 'SilentlyContinue' }
 	if ($PSBoundParameters.ContainsKey('WhatIf')) { $WhatIfPreference = $true } else { $WhatIfPreference = $false }
+	Write-Out -Mode:Verbose -Depth:$Depth -Message:"VerbosePreference is: $VerbosePreference; WhatIfPreference is: $WhatIfPreference"
 
-	Write-Out -Mode:Verbose -Depth:$Depth -Message:'Verbose logging enabled.'
 	$MethodCallDepth = if ($Depth -gt 0) { $Depth - 1 } else { $Depth }
 	Write-Out -Mode:Host -Depth:$MethodCallDepth -Message:'GenerateFolderHashes() started...' -Prefix:$VerbosePadding
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"BaseFolderPaths: $BaseFolderPaths"
@@ -40,15 +40,17 @@ function GenerateFolderHashes {
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"IncludeFoldersAlreadyHashed: $IncludeFoldersAlreadyHashed"
     
 	if($null -eq $FoldersToProcess) {
-		$FoldersToProcess = GetFoldersToProcess -BaseFolderPaths:$BaseFolderPaths -ExclusionCriteria:$ExclusionCriteria -IncludeFoldersAlreadyHashed:$IncludeFoldersAlreadyHashed -Recurse:$Recurse -SortOrder:$FolderSortOrder -Depth:($Depth + 1)
+		$FoldersToProcess = @(GetFoldersToProcess -BaseFolderPaths:$BaseFolderPaths -ExclusionCriteria:$ExclusionCriteria -IncludeFoldersAlreadyHashed:$IncludeFoldersAlreadyHashed -Recurse:$Recurse -SortOrder:$FolderSortOrder -Depth:($Depth + 1))
 	}	
 
 	for ($i = 0; $i -lt $FoldersToProcess.Count; $i++) {
 		$Folder = $FoldersToProcess[$i]
+		if (-not $IncludeFoldersAlreadyHashed -and (Test-Path -LiteralPath (Join-Path $Folder.FullName '.hashes.md5'))) { continue }
+
 		$Hashes = @{}
 		$Files = Get-ChildItem $Folder -File| Where-Object { 
 			($_.Name -ne '.hashes.md5') -and
-			(if ($ExclusionCriteria -and $ExclusionCriteria.Count -gt 0) { $_.FullName -notmatch $($ExclusionCriteria -join "|")} else { $true })
+			($_.FullName -notmatch $($ExclusionCriteria -join "|"))
 		}
 
 		Write-Out -Mode:Host -Depth:($Depth + 1) -Message:"Processing folder `"$($Folder.FullName)`"... [$($i + 1) of $($FoldersToProcess.Count)]" -Prefix:$VerbosePadding
@@ -69,11 +71,11 @@ function GenerateFolderHashes {
 			}
 		}
 		else {
-			Write-Out -Mode:Host -Depth:($Depth + 1) -Message:'Skipping...' -Prefix:$VerbosePadding
+			Write-Out -Mode:Host -Depth:($Depth + 1) -Message:'No files to hash, skipping...' -Prefix:$VerbosePadding
 		}
 	}
 
-	Write-Out -Mode:Verbose -Depth:$MethodCallDepth -Message:'GenerateFolderHashes() finished!'
+	Write-Out -Mode:Host -Depth:$MethodCallDepth -Message:'GenerateFolderHashes() finished!'
 }
 
 function MaintainFolderHashes {
@@ -98,15 +100,13 @@ function MaintainFolderHashes {
 
 	if ($PSBoundParameters.ContainsKey('Verbose')) { $VerbosePreference = 'Continue' } else { $VerbosePreference = 'SilentlyContinue' }
 	if ($PSBoundParameters.ContainsKey('WhatIf')) { $WhatIfPreference = $true } else { $WhatIfPreference = $false }
-
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"VerbosePreference is: $VerbosePreference; WhatIfPreference is: $WhatIfPreference"
-	Write-Out -Mode:Verbose -Depth:$Depth -Message:'Verbose logging enabled.'
 
 	Write-Out -Mode:Host -Depth:$Depth -Message:'VetFolderHashes() started...' -Prefix:$VerbosePadding
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"BaseFolderPaths: $BaseFolderPaths"
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"ExclusionCriteria: $ExclusionCriteria"
 
-	$FoldersToProcess = GetFoldersToProcess -BaseFolderPaths:$BaseFolderPaths -ExclusionCriteria:$ExclusionCriteria -Recurse:$Recurse -SortOrder:$FolderSortOrder -Depth:($Depth + 1)
+	$FoldersToProcess = @(GetFoldersToProcess -BaseFolderPaths:$BaseFolderPaths -ExclusionCriteria:$ExclusionCriteria -IncludeFoldersAlreadyHashed:$true -Recurse:$Recurse -SortOrder:$FolderSortOrder -Depth:($Depth + 1))
 
 	# step 1 - find invalid hashes for folders with changes
 	Write-Host '------------------------------------------'
@@ -120,7 +120,7 @@ function MaintainFolderHashes {
 	VetAndRefreshExistingHashes -FoldersToProcess:$FoldersToProcess -ExclusionCriteria:$ExclusionCriteria -Depth:($Depth + 1)
 
 	Write-Host '------------------------------------------'
-	Write-Out -Mode:Verbose -Depth:$Depth -Message:'MaintainFolderHashes() finished!'
+	Write-Out -Mode:Host -Depth:$Depth -Message:'MaintainFolderHashes() finished!'
 }
 
 #region Private Methods
@@ -129,28 +129,28 @@ function InvalidateHashesWithFolderChanges {
 	param(
 		[Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
-        [DirectoryInfo[]] $FoldersToProcess,
+        [System.IO.DirectoryInfo[]] $FoldersToProcess,
 
 		[String[]] $ExclusionCriteria,
 
 		[int] $Depth = 0
 	)
 
+	if ($null -eq $ExclusionCriteria -or $ExclusionCriteria.Count -eq 0) { $ExclusionCriteria += @('.*') }
+
 	Write-Out -Mode:Host -Depth:$Depth -Message:'InvalidateHashesWithFolderChanges() started...' -Prefix:$VerbosePadding
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"FoldersToProcess: $($FoldersToProcess.Count) folders"
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"ExclusionCriteria: $ExclusionCriteria"
     
-
 	Write-Out -Mode:Host -Depth:$Depth -Message:'Gathering list of hash files...' -Prefix:$VerbosePadding
 	$HashFiles = @($FoldersToProcess | ForEach-Object { Get-ChildItem -Path $_.FullName -File -Force -Filter '.hashes.md5' -ErrorAction SilentlyContinue })
 
 	for ($i = 0; $i -lt $HashFiles.Count; $i++) {
-		$Hash = $HashFiles[$i]
-		$Folder = $Hash.DirectoryName
-		$Files = (Get-ChildItem -Path:("$Folder\\*") -File -Force -Exclude:".hashes.md5")| Where-Object { 
-			if ($ExclusionCriteria -and $ExclusionCriteria.Count -gt 0) { $_.FullName -notmatch $($ExclusionCriteria -join "|")} else { $true }
-		}
-		$Hashes = ParseHashFile -HashFile:$Hash.FullName -Depth:($Depth + 1)
+		$HashFile = $HashFiles[$i]
+		$Folder = $HashFile.DirectoryName
+		$Files = (Get-ChildItem -Path:("$Folder\\*") -File -Force -Exclude:".hashes.md5")| 
+			Where-Object { $_.FullName -notmatch $($ExclusionCriteria -join "|") }
+		$Hashes = ParseHashFile -HashFile:$HashFile.FullName -Depth:($Depth + 1)
 		$IsInvalid = $false
 
 		Write-Out -Mode:Host -Depth:($Depth + 1) -Message:"Processing folder `"$($Folder)`"... [$($i + 1) of $($HashFiles.Count)]" -Prefix:$VerbosePadding
@@ -163,7 +163,7 @@ function InvalidateHashesWithFolderChanges {
 		else {
 			foreach ($File in $Files) {
 				# invalidate hashes with files newer than the hash
-				if ($File.LastWriteTime -gt $Hash.LastWriteTime) { 
+				if ($File.LastWriteTime -gt $HashFile.LastWriteTime) { 
 					Write-Out -Mode:Host -Depth:($Depth + 1) -Message:"$($File) has been updated, invalidating hash..." -Prefix:$VerbosePadding
 					$IsInvalid = $true; 
 					break; 
@@ -179,9 +179,9 @@ function InvalidateHashesWithFolderChanges {
 		}
 
 		if ($IsInvalid) {
-			Write-Out -Mode:Host -Depth:($Depth + 1) -Message:"Removing bad hash file `"$($Hash.FullName)`"..." -Prefix:$VerbosePadding
-			if ($PSCmdlet.ShouldProcess($Hash.FullName, 'Remove invalid hash file')) {
-				Remove-Item -Path:$Hash.FullName -Force
+			Write-Out -Mode:Host -Depth:($Depth + 1) -Message:"Removing bad hash file `"$($HashFile.FullName)`"..." -Prefix:$VerbosePadding
+			if ($PSCmdlet.ShouldProcess($HashFile.FullName, 'Remove invalid hash file')) {
+				Remove-Item -Path:$HashFile.FullName -Force
 			}
 		}
 		else {
@@ -204,6 +204,8 @@ function VetAndRefreshExistingHashes {
 		[int] $Depth = 0
 	)
 
+	if ($null -eq $ExclusionCriteria -or $ExclusionCriteria.Count -eq 0) { $ExclusionCriteria += @('.*') }
+
 	Write-Out -Mode:Host -Depth:$Depth -Message:'VerifyFolderHashes() started...' -Prefix:$VerbosePadding
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"FoldersToProcess: $($FoldersToProcess.Count) folders"
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"ExclusionCriteria: $ExclusionCriteria"
@@ -215,9 +217,8 @@ function VetAndRefreshExistingHashes {
 		$HashFile = $HashFiles[$i]
 		$Folder = $HashFile.Directory
 
-		$Files = (Get-ChildItem -Path:$("$($HashFile.DirectoryName)\\*") -File -Force -Exclude:"*.md5") | Where-Object { 
-			if ($ExclusionCriteria -and $ExclusionCriteria.Count -gt 0) { $_.FullName -notmatch $($ExclusionCriteria -join "|")} else { $true }
-		}
+		$Files = (Get-ChildItem -Path:$("$($HashFile.DirectoryName)\\*") -File -Force -Exclude:"*.md5") | 
+			Where-Object { $_.FullName -notmatch $($ExclusionCriteria -join "|") }
 		$Hashes = ParseHashFile -HashFile:$HashFile.FullName -Depth:($Depth + 1)
 		$RefreshNeeded = $false
 
@@ -274,6 +275,8 @@ function GetFoldersToProcess {
 		[String] $SortOrder = 'Alphabetical' # 'Random' or 'Alphabetical'
 	)
 
+	if ($null -eq $ExclusionCriteria -or $ExclusionCriteria.Count -eq 0) { $ExclusionCriteria += @('.*') }
+
 	Write-Out -Mode:Host -Depth:($Depth - 1) -Message:'GetFoldersToProcess() started...' -Prefix:$VerbosePadding
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"BaseFolderPaths: $BaseFolderPaths"
 	Write-Out -Mode:Verbose -Depth:$Depth -Message:"ExclusionCriteria: $ExclusionCriteria"
@@ -283,10 +286,10 @@ function GetFoldersToProcess {
 	Write-Out -Mode:Host -Depth:$Depth -Message:'Gathering list of folders...' -Prefix:$VerbosePadding
 	Write-Out -Mode:Progress -Depth:$Depth -Message:'Scanning...' -ProgressActivity:'Scanning'
 	
-	$FoldersToProcess = @(Get-Item -Path:$BaseFolderPaths -Directory -ErrorAction SilentlyContinue) # confirm that the base path is included
+	$FoldersToProcess = @(Get-Item -Path:$BaseFolderPaths -ErrorAction SilentlyContinue) # confirm that the base path is included
 	$FoldersToProcess += Get-ChildItem -Path:$BaseFolderPaths -Directory -Recurse:$Recurse -ErrorAction:SilentlyContinue |
 	Where-Object { 
-		(if ($ExclusionCriteria -and $ExclusionCriteria.Count -gt 0) { $_.FullName -notmatch $($ExclusionCriteria -join "|")} else { $true }) -and # folders or files that aren't excluded or inside excluded 
+		($_.FullName -notmatch $($ExclusionCriteria -join "|")) -and # folders or files that aren't excluded or inside excluded 
 		($IncludeFoldersAlreadyHashed -or !(Get-ChildItem -Path:$_.FullName -File -Force -Filter:'.hashes.md5')) -and # include folders already hashed when requested, otherwise only folders missing hashes
 		((Get-ChildItem -Path:$_.FullName -File).Count -gt 0) # only folders with files in them
 			
@@ -337,7 +340,7 @@ function ParseHashFile {
 	$Hashes = @{}
 	$(Get-Content $HashFile) | ForEach-Object {
 		$value, $key = ($_).Split(" *")
-		$Hashes[$key] = $value.ToUpper() # confirm that the md5 is upper
+		$Hashes[$key] = $value.ToUpper()
 	}
 
 	Write-Out -Mode:Verbose -Depth:($Depth - 1) -Message:'ParseHashFile() finished!'
